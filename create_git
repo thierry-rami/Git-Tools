@@ -1,0 +1,130 @@
+#!/bin/bash
+## a changer pour mettre de collaborateurs par défaut
+git_collab1=""
+git_collab2=""
+git_collab3=""
+# test si paquet Git , curl , tree , dialog installés
+if ! command -v dialog >/dev/null 2>&1; then
+    echo "Le paquet 'dialog' n'est pas installé. Veuillez l'installer pour exécuter ce script."; exit 1
+fi
+if ! command -v git >/dev/null 2>&1; then
+    echo "Le paquet 'git' n'est pas installé. Veuillez l'installer pour exécuter ce script.";    exit 1
+fi
+if ! command -v curl >/dev/null 2>&1; then
+    echo "Le paquet 'curl' n'est pas installé. Veuillez l'installer pour exécuter ce script.";   exit 1
+fi
+if ! command -v tree >/dev/null 2>&1; then
+    echo "Le paquet 'tree' n'est pas installé. Veuillez l'installer pour exécuter ce script.";   exit 1
+fi
+
+# si le Git_Token n'est pas défini message d'erreur et on sort
+if [ -n "${Git_Token}" ] ; then
+:
+else
+  echo "Attention vous devez définir Git_Token dans "
+  echo "votre fichier ~/.bashrc  :"
+  echo "export Git_Token=<contenu_de_votre_token>"
+  exit 1
+fi
+
+git_name=$(git config  --global user.name)
+git_email=$(git config --global user.email)
+
+values=$(dialog --stdout --title "Informations du projet" --form "" 0 0 0 \
+    "Utilisateur(github) :" 1 1 "$git_name" 1 25 40 0 \
+    "e-mail(la plateforme) :" 2 1 "$git_email" 2 25 40 0 \
+    "Nom du projet :" 3 1 "" 3 25 40 0 \
+    "Commentaire :" 4 1 "" 4 25 40 0 \
+    "Nombre de jobs :" 5 1 "0" 5 25 40 0\
+    "Collaborateur 1 :" 6 1 "$git_collab1" 6 25 40 0 \
+    "Collaborateur 2 :" 7 1 "$git_collab2" 7 25 40 0 \
+    "Collaborateur 3 :" 8 1 "$git_collab3" 8 25 40 0 )
+# Extraction des valeurs saisies
+IFS=$'\n' read -r -d '' git_user git_mail git_repo git_comm git_nbjob git_collab1 git_collab2 git_collab3  <<< "$values"
+clear
+#echo $values
+
+if [ -n "${values}" ] ; then
+#echo "dialog OK"
+#exit 1
+:
+else
+  echo "Attention vous devez répondre !"
+  exit 1
+fi
+
+git config  --replace-all --global user.name  $git_name
+git config  --replace-all --global user.email $git_email
+
+# private repo
+pr=true
+# repo est template ?
+md=false
+
+# si tous est OK , on vas creer le dossier et les jobs
+# on vas tous stocker dans /srv//github , qui sera crée si n'existe pas
+clear
+RunDir="/home/$USER/github/$git_repo"
+if [ ! -d $RunDir ]; then
+    mkdir -p "$RunDir"
+#    echo $RunDir
+fi
+
+# si pas de job creation simple repo 
+if [ $git_nbjob -ne 0 ]; then
+ 
+ for (( i=1 ; i<=$git_nbjob ; i++ ))
+  do  
+   job=$(printf "%02d" $i) 
+   mkdir -p $RunDir/Job$job
+   touch $RunDir/Job$job/.gitkeep
+  done
+else
+ echo "pas de jobs"
+fi
+
+create=("curl -L -X POST -H \"Accept: application/vnd.github+json\" \
+-H \"Authorization: Bearer $Git_Token\" https://api.github.com/user/repos \
+-d '{\"name\":\"$git_repo\",\"description\":\"$git_comm\",\"private\":$pr,\"is_template\":$md}'")
+#echo $create
+eval "$create"
+
+# on ajoute les collaborateurs
+my_var=$(echo "$git_collab1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+if [ -n "$my_var" ]; then
+create=("curl -L -X PUT -H \"Accept: application/vnd.github+json\" \
+-H \"Authorization: Bearer $Git_Token\" -H \"X-GitHub-Api-Version: 2022-11-28\" \
+https://api.github.com/repos/$git_name/$git_repo/collaborators/$my_var -d '{\"permission\":\"admin\"}'")
+#echo $create
+eval "$create"
+fi
+# on ajoute les collaborateurs
+my_var=$(echo "$git_collab2" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+if [ -n "$my_var" ]; then
+create=("curl -L -X PUT -H \"Accept: application/vnd.github+json\" \
+-H \"Authorization: Bearer $Git_Token\" -H \"X-GitHub-Api-Version: 2022-11-28\" \
+https://api.github.com/repos/$git_name/$git_repo/collaborators/$my_var -d '{\"permission\":\"admin\"}'")
+echo $create
+eval "$create"
+fi
+# on ajoute les collaborateurs
+my_var=$(echo "$git_collab3" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+if [ -n "$my_var" ]; then
+create=("curl -L -X PUT -H \"Accept: application/vnd.github+json\" \
+-H \"Authorization: Bearer $Git_Token\" -H \"X-GitHub-Api-Version: 2022-11-28\" \
+https://api.github.com/repos/$git_name/$git_repo/collaborators/$my_var -d '{\"permission\":\"admin\"}'")
+eval "$create"
+echo $create
+fi
+
+cd /home/$USER/github/$git_repo
+echo $git_comm > README.md
+
+git init
+git add . --force
+##git config --global init.defaultBranch main
+git commit -m "first commit"
+git branch -M main
+git remote add origin git@github.com:$git_user/$git_repo.git
+git push -u origin main
+tree /home/$USER/github/$git_repo
